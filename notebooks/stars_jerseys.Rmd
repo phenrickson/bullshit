@@ -1,0 +1,695 @@
+---
+title: "Watching Hockey Games While Wearing a Jersey: An Analysis"
+author: "Phil Henrickson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+```{r}
+
+# knitr chunk options
+knitr::opts_chunk$set(echo = T,
+                      error=F,
+                      warning = F,
+                      dev="png",
+                      fig.align = 'center',
+                      out.width = '80%')
+
+# options for displaying
+options(knitr.duplicate.label = "allow",
+        scipen = 999)
+
+```
+
+
+```{r echo = T, include = F}
+
+# packages
+library(tidyverse)
+library(infer)
+library(yardstick)
+library(ggthemes)
+library(colorr)
+library(broom.mixed)
+
+
+```
+
+```{r}
+
+# ggplot theme
+theme_phil <- function () {
+
+        ggplot2::theme_minimal() %+replace%
+                theme(
+                        axis.title = element_text(),
+                        # strip.background = element_rect(fill="grey100"),
+                        #strip.text = element_text(colour = 'black'),
+                        #  strip.text.x = element_text(size = 7),
+                        #  strip.text.y = element_text(size = 7),
+                        legend.position = "top",
+                        # plot.subtitle = element_text(size = 10,
+                        #                              hjust = 0),
+                        axis.text.x = element_text(size=rel(0.9),
+                                                   vjust = 1),
+                        axis.text.y = element_text(size=rel(0.9),
+                                                   hjust = 1),
+                        plot.caption = element_text(size=8,
+                                                    hjust = 1,
+                                                    vjust = 1,
+                                                    margin = unit(c(6,0,0,0), "points")),
+                        legend.title = element_blank(),
+                        panel.grid.major = element_blank(),
+                        panel.spacing = unit(6.5, "mm"),
+                        plot.title = element_text(hjust = 0.5, size = 16),
+                        plot.subtitle =  element_text(hjust = 0.5),
+                        strip.text.x = element_text(size = 12),
+                        panel.grid = element_line(colour = "grey90")
+
+                )
+}
+
+# colors for stars games
+stars_colors = teamcolors %>%
+        filter(league == 'nhl') %>%
+        filter(name == 'Dallas Stars')
+
+```
+
+# Data
+
+Load in my jersey labels and Stars game data (from the NHL API) for 22-23, combining these into one dataset.
+
+```{r}
+
+# load in jersey labels
+jerseys = data.table::fread(here::here("data", "jerseys", "cleaned_2223.csv"))
+
+# load in games
+games = readRDS(here::here("data", "games", "team_games_2223.Rdata")) %>%
+        rename(team.id = team.team.id,
+               team.name = team.team.name,
+               team.link = team.team.link,
+               opponent.id = opponent.team.id,
+               opponent.name = opponent.team.name,
+               opponent.link = opponent.team.link,
+               outcome_binary = outcome.team.binary,
+               outcome_ordinal = outcome.team.ordinal) %>%
+        mutate(team_won = case_when(outcome_binary == 'win' ~ 'yes',
+                                    TRUE ~ 'no')) %>%
+        set_names(., gsub("\\.", "_", names(.))) %>%
+        mutate(date = as.Date(date)) %>%
+        as_tibble()
+
+# join up
+games_jerseys = bind_cols(jerseys,
+                          games) %>%
+        mutate(date = as.Date(date)) %>%
+        mutate(jersey_worn = case_when(jersey == 'no jersey' ~ 'no',
+                                       TRUE ~ 'yes'),
+               jersey_type = factor(case_when(grepl("home", jersey) ~ 'home',
+                                       grepl("away", jersey) ~ 'away',
+                                       TRUE ~ 'no jersey'),
+                                    levels = c('no jersey',
+                                               'home',
+                                               'away'))) %>%
+        mutate(jersey = factor(jersey,
+                               levels = c("no jersey",
+                                          "seguin home",
+                                          "pavelski away",
+                                          "benn home blackout",
+                                          "robertson home rr",
+                                          "heiskanen away rr")))
+
+```
+
+# Calendar
+
+This is the calendar of games played.
+
+```{r grid.width = '100%', fig.height =10}
+
+# empty dates for the nhl calendar year
+dates = 
+        tibble(date = seq(as.Date("2022-10-01"),
+                          as.Date("2023-05-31"),
+                          by = 1)) %>%
+        mutate(Year=lubridate::year(date),
+               Month = lubridate::month(date, label=TRUE, abbr=FALSE),
+               Day = lubridate::wday(date, label=TRUE),
+               mday = lubridate::mday(date),
+               Month_week = (5 + day(date) + wday(floor_date(date, 'month'))) %/% 7) %>%
+        filter(date < as.Date("2023-04-30")) %>%
+        # join with games
+        left_join(.,
+                  games_jerseys) %>%
+        mutate(game_played = case_when(team_won %in% c("yes", "no") ~ 'yes',
+                                       TRUE ~ 'no'))
+
+
+# blank calendar
+calendar =         
+        dates %>%
+        ggplot(aes(y=Month_week, x=Day))+
+        geom_tile(color="white")+
+        geom_text(aes(label = mday),
+                  color = 'white', 
+                  size = 8) +
+        facet_wrap(Year~Month, ncol=3)+
+        scale_y_continuous(breaks = scales::pretty_breaks())+
+        scale_y_reverse()+
+        theme(legend.position="bottom")+
+        theme_phil()+
+        ylab("")+
+        theme(axis.text.y = element_blank())+
+        xlab("")
+
+calendar +
+        geom_tile(color = 'white',
+                  aes(fill = game_played),
+                  linewidth = 4)+
+        geom_text(aes(label = mday),
+                  color = 'white', 
+                  size = 8) +
+        scale_fill_manual(values = c("grey80", stars_colors$secondary))
+
+```
+
+These are the games on the calendar broken down by outcome. Victory Green = win; black = loss.
+
+```{r grid.width = '100%', fig.height =10}
+
+calendar +
+        geom_tile(color = 'white',
+                  aes(fill = team_won),
+                  linewidth = 4)+
+        geom_text(aes(label = mday),
+                  color = 'white', 
+                  size = 8)+
+        scale_fill_manual(values = c("black", stars_colors$secondary),
+                          na.value = 'grey80')
+
+```
+
+The Stars won 47 out of 82 games this year, with a whole heck of a lot of losses occuring in OT.
+
+```{r}
+
+games_jerseys %>%
+        group_by(outcome_binary) %>%
+        count() %>%
+        ggplot(aes(x=outcome_binary,
+                   fill = outcome_binary,
+                   y = n))+
+        geom_col()+
+        theme_phil() +
+        scale_fill_manual(values = c("black", stars_colors$secondary))
+
+        
+games_jerseys %>%
+        group_by(outcome_binary) %>%
+        count()+
+        
+
+```
+
+```{r}
+
+```
+
+
+
+I've highlighted in yellow the Stars games in which I wwas wearing a jersey. 
+
+```{r grid.width = '100%', fig.height =10}
+
+calendar +
+        geom_tile(color = 'white',
+                  aes(fill = team_won),
+                  linewidth = 4)+
+        geom_tile(data = dates %>%
+                          filter(jersey_worn == 'yes'),
+                  fill = NA, 
+                  color = "yellow", 
+                  linewidth = 3) +
+        geom_text(aes(label = mday),
+                  color = 'white', 
+                  size = 8) +
+        scale_fill_manual(values = c("grey80", stars_colors$secondary))+
+        scale_fill_manual(values = c("black", stars_colors$secondary),
+                          na.value = 'grey80')
+                                             
+```
+
+# Analysis
+
+The basic question: did the Stars win more or less games when I wore a jersey vs when I did not?
+
+```{r}
+
+# bar chart
+games_jerseys %>%
+        group_by(jersey_worn,
+                 team_won) %>%
+        count() %>%
+        group_by(jersey_worn) %>%
+        mutate(prop = n / sum(n)) %>%
+        mutate(label = case_when(team_won == 'yes' ~ 'wins',
+                                 team_won == 'no' ~ 'losses')) %>%
+        ggplot(aes(x=jersey_worn,
+                   y = n,
+                   fill = team_won))+
+        geom_col(color = 'white')+
+        geom_text(color = 'white',
+                  aes(label = paste(n, label)), position = position_stack(vjust = .5)) +
+        scale_fill_manual(values = c('black', stars_colors$secondary))+
+        theme_phil()+
+        theme(legend.title = element_text())+
+        guides(fill = 'none')
+
+```
+
+Turns out they actually won slightly more.
+
+
+
+
+This might be easier to intrepret by looking at the win percentage in games I was wearing a jersey vs games in which I was not.
+
+# proportion chart
+games_jerseys %>%
+        group_by(jersey_worn,
+                 team_won) %>%
+        count() %>%
+        group_by(jersey_worn) %>%
+        mutate(perc = n / sum(n) * 100) %>%
+        ggplot(aes(x=jersey_worn,
+                   y = perc,
+                   fill = team_won))+
+        geom_col(color = 'white')+
+        geom_text(color = 'white',
+                  aes(label = paste(round(perc, 1), "%")), position = position_stack(vjust = .5)) +
+        scale_fill_manual(values = c('black', stars_colors$secondary))+
+        theme_phil()+
+        theme(legend.title = element_text())
+```
+
+How do we test this?
+
+Find the difference in proportions between games won when I was wearing a jersey vs games won when I was not.
+
+```{r}
+
+# get observed difference in proportions
+d_hat <- games_jerseys %>%
+  observe(team_won ~ jersey_worn, success = "yes", 
+          stat = "diff in props", order = c("yes", "no"))
+
+# calculate this manually
+
+```
+
+Then, simulate the difference in proportions that we would observe **given that there is no difference between the two groups**. This gives us the range of expected differences in proportions we would observe simply by random chance alone, given our sample.
+
+For example, we can pull out what our split may have looked like in a random sample.
+
+```{r}
+
+# simulate a null distribution
+set.seed(1999)
+sims_null_dist_d = 
+        games_jerseys %>% 
+        specify(team_won ~ jersey_worn, success = "yes") %>%
+        hypothesize(null = 'independence') %>%
+        generate(reps = 10000, type = 'permute')
+
+# one simulation
+# most_extremes = 
+#         sims_null_dist_d %>%
+#         calculate(stat = "diff in props", order = c("yes", "no")) %>%
+#         slice_max(stat, n = 5) %>%
+#         pull(replicate)
+
+# show some simluations
+set.seed(1999)
+sample =  sample(1:10000, 1)
+        
+sims_null_dist_d %>%
+        filter(replicate %in% sample) %>%
+        group_by(jersey_worn,
+                 team_won) %>%
+        count() %>%
+        group_by(jersey_worn) %>%
+        mutate(perc = n / sum(n) * 100) %>%
+        ggplot(aes(x=jersey_worn,
+                   y = perc,
+                   fill = team_won))+
+        geom_col(color = 'white',
+                 alpha = 0.7)+
+        geom_text(color = 'white',
+                  aes(label = paste(round(perc, 1), "%")), position = position_stack(vjust = .5)) +
+        scale_fill_manual(values = c('black', stars_colors$secondary))+
+        theme_phil()+
+        theme(legend.title = element_text())+
+        ggtitle(paste("Simulated Outcome:", sample))
+
+```
+
+How does our data compare to the simulated distribution? I visualize the distribution of the test statistic in simulations then overlay my observed test statistic. How frequently would we observe a test statistic as extreme as the one I found, in either direction, given that there's no relationship between my wearing a jersey and the outcome? About 33% of the time. In essence, there's nothing particularly notable here.
+
+```{r}
+
+# shade p value
+null_dist_d %>%
+        calculate(stat = 'diff in props', order = c("yes", "no")) %>%
+        visualize() +
+        shade_p_value(d_hat,
+                      direction = 'two-sided')+
+        theme_minimal()
+
+# directly calculate p value
+null_dist_d %>%
+        calculate(stat = 'diff in props', order = c("yes", "no")) %>%
+        get_p_value(d_hat, direction = 'two-sided')
+
+```
+
+In other words, we are well within the realm of what we would expect to see. We are inside what we would expect to see 
+
+```{r}
+
+# get ci
+ci = get_confidence_interval(null_dist_d %>%
+                                     calculate(stat = 'diff in props', order = c("yes", "no")),
+                             level = .95)
+
+# shade p value
+null_dist_d %>%
+        calculate(stat = 'diff in props', order = c("yes", "no")) %>%
+        visualize() +
+        shade_confidence_interval(ci)+
+        shade_p_value(d_hat,
+                      direction = 'two-sided')
+
+```
+
+How many more games would the Stars have needed to win while I was wearing a jersey to flip this around?
+
+Another way of looking at this: how many wins would the Stars have had if I just randomly selected the games in which I was wearing a jersey? This the distribution of wins in those simulations; the red line indicates how many they did in fact win.
+
+```{r}
+
+sims_null_dist_d %>% 
+        group_by(replicate) %>% 
+        filter(jersey_worn == 'yes' & team_won == 'yes') %>%
+        group_by(replicate, team_won) %>% 
+        count() %>% 
+        ggplot(aes(x=n))+
+        geom_bar()+
+        geom_vline(xintercept = 25,
+                   color = 'red',
+                   size = 2)+
+        theme_phil()+
+        xlab("simulated wins")
+
+```
+
+How many more wins would they have needed while I was wearing my jersey to think there was anything interesting going on here? The 95% confidence interval ranges from 18 wins to 27 wins; if they had won 3 more games things could have been interesting.
+
+```{r}
+
+# at the high end
+high_ci = sims_null_dist_d %>% 
+    group_by(replicate) %>% 
+    filter(jersey_worn == 'yes' & team_won == 'yes') %>%
+    group_by(replicate, team_won) %>% 
+    count() %>% 
+        arrange(desc(n)) %>%
+        ungroup() %>% 
+        filter(row_number() == 250) %>%
+        pull(n)
+
+# at the low end
+low_ci = sims_null_dist_d %>% 
+    group_by(replicate) %>% 
+    filter(jersey_worn == 'yes' & team_won == 'yes') %>%
+    group_by(replicate, team_won) %>% 
+    count() %>% 
+        arrange(desc(n)) %>%
+        ungroup() %>% 
+        filter(row_number() == 9750) %>%
+        pull(n)
+
+c(low_ci, high_ci)
+
+```
+
+Just a note: I was wearing my Heiskanen jersey for the game we lost to the Rangers in OT after giving up a goal at the buzzer, and I was wearing my Robertson jersey for the game we lost to Calgary on a breakaway in the final minute.
+
+
+```{r}
+
+# calculate diff in props using infer
+z_hat <- games_jerseys %>% 
+        specify(team_won ~ jersey_worn, success = "yes") %>%
+        calculate(stat = "z", order = c("yes", "no"))
+
+# simulate a null distribution
+null_dist_z = 
+        games_jerseys %>% 
+        specify(team_won ~ jersey_worn, success = "yes") %>%
+        hypothesize(null = 'independence') %>%
+        generate(reps = 1000, type = 'permute') %>%
+        calculate(stat = "z", order = c("yes", "no"))
+
+# visualize and add p value
+null_dist_z %>%
+        visualize() +
+        shade_p_value(z_hat,
+                      direction = 'both')
+
+# get the p value of a two sided test
+null_dist_z %>%
+        get_p_value(z_hat,
+                    direction = 'two-sided')
+
+# get the p value of a two sided test
+null_dist_z %>%
+        get_p_value(z_hat,
+                    direction = 'both')
+
+```
+
+Okay, but what about by jersey type?
+
+```{r}
+
+games_jerseys %>%
+        ggplot(aes(y=jersey,
+                   fill = outcome_binary))+
+        geom_bar()+
+        theme_minimal()+
+        scale_fill_colorblind()
+
+```
+
+
+```{r}
+
+team_season_games %>%
+        mutate(game_number = row_number()) %>%
+        ggplot(aes(x=game_number, 
+                   fill = team.home.away,
+                   y= team.shotsOnGoal))+
+        geom_col()
+      #  scale_x_date(breaks = scales::pretty_breaks())
+
+team_season_games %>%
+        ggplot(aes(y = team.home.away,
+                   x = team.shotsOnGoal))+
+        stat_density_ridges(quantile_lines = T,
+                            quantile_fun = median)
+
+library(infer)
+
+# calculate the observed statistic
+observed_statistic <- team_season_games %>%
+        specify(response = team.shotsOnGoal) %>%
+        calculate(stat = "mean")
+
+team_season_games %>%
+        ggplot(aes(x=team.shotsOnGoal))+
+        geom_histogram(binwidth = 1)
+
+null_dist <- team_season_games %>%
+        specify(response = team.shotsOnGoal) %>%
+        hypothesize(null = "point", mu = 31) %>%
+        generate(reps = 1000, type = "bootstrap") %>%
+        calculate(stat = "mean")
+
+null_dist %>%
+        visualize() + 
+        shade_p_value(observed_statistic,
+                      direction = "two-sided")
+
+null_dist %>%
+        get_p_value(obs_stat = observed_statistic,
+                    direction = "two-sided")
+
+t_test(team_season_games, response = team.shotsOnGoal, mu = 31)
+
+observed_statistic <- team_season_games %>%
+        specify(response = team.shotsOnGoal) %>%
+        hypothesize(null = "point", mu = 31) %>%
+        calculate(stat = "t") %>%
+        dplyr::pull()
+
+null_dist <- team_season_games %>%
+        specify(team.shotsOnGoal ~ team.home.away) %>%
+        generate(reps = 1000, type = "bootstrap") %>%
+        calculate(stat = "t", order = c("home", "away"))
+
+observed_stat <- team_season_games %>%
+        specify(team.shotsOnGoal ~ team.home.away) %>%
+        calculate(stat = "t", order = c("home", "away"))
+
+null_dist %>%
+        visualise(stat = 't')+
+        shade_p_value(observed_statistic,
+                      direction = "two-sided")
+
+lm(team.shotsOnGoal ~ team.home.away, data = team_season_games) %>%
+        broom::tidy() %>% 
+        mutate_if(is.numeric, round, 2)
+
+
+# 
+# team_season_games %>%
+#         specify(team.shotsOnGoal ~ team.home.away) %>%
+#         hypothesize(null = "independence") %>%
+#         generate(reps = 1000, type = "bootstrap") %>%
+#         calculate(stat = "diff in means", order = c("home", "away")) %>%
+#         visualise()+
+#         shade_p_value(observed_statistic,
+#                       direction = "two-sided")
+
+
+```
+
+
+
+
+```{r}
+
+
+games_jerseys %>%
+        group_by(jersey_worn, team_won) %>%
+        count()
+
+games_jerseys %>%
+        ggplot(aes(x=jersey_worn,
+                   fill = team_won))+
+        geom_bar(position = 'fill')+
+        theme_minimal()
+
+games_jerseys %>%
+        ggplot(aes(y=jersey_worn,
+                   fill = outcome_binary))+
+        geom_bar()+
+        theme_minimal()+
+        scale_fill_colorblind()
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+games_jerseys %>%
+        ggplot(aes(y=jersey,
+                   fill = outcome_binary))+
+        geom_bar()+
+        theme_minimal()+
+        scale_fill_colorblind()
+
+```
+
+
+test
+
+```{r}
+
+
+d_hat <- games_jerseys %>% 
+        specify(outcome_binary ~ jersey_worn, success = "win") %>%
+        calculate(stat = "diff in props", order = c("yes", "no"))
+
+null_dist <- games_jerseys %>% 
+        specify(outcome_binary ~ jersey_worn, success = "win") %>%
+        hypothesize(null = 'independence') %>%
+        generate(reps = 1000, type = 'permute') %>%
+        calculate(stat = "diff in props", order = c("yes", "no"))
+
+null_dist %>%
+        visualise() +
+        shade_p_value(d_hat, direction = 'two sided')
+
+null_dist %>%
+  get_p_value(obs_stat = d_hat, direction = "two sided")
+
+```
+```{r}
+
+games_jerseys %>% 
+        specify(outcome_binary ~ jersey_worn, success = "win") %>%
+        fit()
+
+```
+
+
+
+```{r}
+
+glm(team_won ~ jersey, 
+    data = games_jerseys %>%
+            mutate(team_won = case_when(team_won == 'yes' ~ 1,
+                                        TRUE ~ 0)),
+    family = "binomial") %>%
+        summary()
+
+glm(team_won ~ jersey_worn + jersey_type, 
+    data = games_jerseys %>%
+            mutate(team_ = case_when(team_won == 'yes' ~ 1,
+                                        TRUE ~ 0)),
+        family = "binomial") %>%
+        tidy() %>%
+        mutate_if(is.numeric, round, 3)
+
+
+
+fit = lm(team_won ~ jersey, 
+    data = games_jerseys %>%
+            mutate(team_won = case_when(team_won == 'yes' ~ 1,
+                                        TRUE ~ 0))) 
+
+# white robust standard errors
+library(lmtest)
+library(sandwich)
+coeftest(fit, vcov = vcovHC(fit, type = 'HC0')) %>%
+        tidy() %>%
+        mutate_if(is.numeric, round, 3)
+
+
+# get bootstrapped standard errors
+rsample::bootstraps(games_jerseys %>%
+                  select(team_won, outcome_ordinal, outcome_binary, jersey_type, jersey_worn) %>%
+                  as_tibble())
+
+
+bootstrap(games_jerseys %>%
+                  select(team_won, outcome_ordinal, outcome_binary, jersey_type, jersey_worn) %>%
+                  as_tibble(),
+          m = 100)
+games_jerseys %>%
+            mutate(team_won = case_when(team_won == 'yes' ~ 1,
+                                        TRUE ~ 0)))
+
+```
+
+
