@@ -203,7 +203,7 @@ sums %>%
 
 ```
 
-Which we can see by just highlighting the sequences. This is highlighting (in light grey) the addiitional sequences with at least six correct.
+Which we can see by just highlighting the sequences. This is highlighting (in dark grey) the addiitional sequences with at least six correct.
 
 ```{r highlight six correct, echo = F}
 
@@ -219,19 +219,11 @@ ft %>%
         bg(i = ~ group1 %in% apply(six_correct_cups, 1, paste, collapse = " "),
            j = ~ group1,
            bg = 'grey40', 
-           part = 'body') %>%
-        bg(i = ~ group2 %in% paste(truth, collapse = " "),
-           j = ~ group2,
-           bg = 'dodgerblue', 
-           part = 'body') %>%
-        bg(i = ~ group1 %in% paste(truth, collapse = " "),
-           j = ~ group1,
-           bg = 'dodgerblue', 
            part = 'body')
 
 ```
 
-This is highlighting the additional sequences (in dark grey) that had at least four correct.
+This is highlighting the additional sequences (in light grey) that had at least four correct.
 
 ```{r highlight four correct, echo = F}
 
@@ -247,23 +239,25 @@ ft %>%
         bg(i = ~ group1 %in% apply(four_correct_cups, 1, paste, collapse = " "),
            j = ~ group1,
            bg = 'grey80', 
-           part = 'body') %>%
-        bg(i = ~ group2 %in% apply(six_correct_cups, 1, paste, collapse = " "),
-           j = ~ group2,
-           bg = 'grey40', 
-           part = 'body') %>%
-        bg(i = ~ group1 %in% apply(six_correct_cups, 1, paste, collapse = " "),
-           j = ~ group1,
-           bg = 'grey40', 
-           part = 'body') %>%
-        bg(i = ~ group2 %in% paste(truth, collapse = " "),
-           j = ~ group2,
-           bg = 'dodgerblue', 
-           part = 'body') %>%
-        bg(i = ~ group1 %in% paste(truth, collapse = " "),
-           j = ~ group1,
-           bg = 'dodgerblue', 
-           part = 'body')
+           part = 'body') 
+# 
+# %>%
+#         bg(i = ~ group2 %in% apply(six_correct_cups, 1, paste, collapse = " "),
+#            j = ~ group2,
+#            bg = 'grey40', 
+#            part = 'body') %>%
+#         bg(i = ~ group1 %in% apply(six_correct_cups, 1, paste, collapse = " "),
+#            j = ~ group1,
+#            bg = 'grey40', 
+#            part = 'body') %>%
+#         bg(i = ~ group2 %in% paste(truth, collapse = " "),
+#            j = ~ group2,
+#            bg = 'dodgerblue', 
+#            part = 'body') %>%
+#         bg(i = ~ group1 %in% paste(truth, collapse = " "),
+#            j = ~ group1,
+#            bg = 'dodgerblue', 
+#            part = 'body')
 
 
 ```
